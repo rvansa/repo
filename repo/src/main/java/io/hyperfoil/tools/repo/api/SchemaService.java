@@ -3,7 +3,9 @@ package io.hyperfoil.tools.repo.api;
 import io.agroal.api.AgroalDataSource;
 import io.hyperfoil.tools.repo.entity.json.Access;
 import io.hyperfoil.tools.repo.entity.json.Schema;
+import io.hyperfoil.tools.repo.entity.json.ViewExtractor;
 import io.hyperfoil.tools.yaup.json.Json;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.panache.common.Page;
 import io.quarkus.panache.common.Sort;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -13,6 +15,7 @@ import javax.annotation.security.RolesAllowed;
 import javax.inject.Inject;
 import javax.persistence.EntityManager;
 import javax.transaction.Transactional;
+import javax.ws.rs.Consumes;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -29,6 +32,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.everit.json.schema.ValidationException;
 import org.everit.json.schema.loader.SchemaLoader;
@@ -55,12 +59,12 @@ public class SchemaService {
 
    @PermitAll
    @GET
-   @Path("{name:.*}")
+   @Path("{id}")
    @Produces(MediaType.APPLICATION_JSON)
-   public Schema getSchema(@PathParam("name") String name, @QueryParam("token") String token){
+   public Schema getSchema(@PathParam("id") int id, @QueryParam("token") String token){
       try (CloseMe h1 = sqlService.withRoles(em, identity);
            CloseMe h2 = sqlService.withToken(em, token)) {
-         return Schema.find("name", name).firstResult();
+         return Schema.find("id", id).firstResult();
       }
    }
 
@@ -178,6 +182,46 @@ public class SchemaService {
       }
       return null;
    }
+
+   @PermitAll
+   @GET
+   @Path("extractor")
+   @Produces(MediaType.APPLICATION_JSON)
+   public List<ViewExtractor> listExtractors() {
+      try (CloseMe h = sqlService.withRoles(em, identity)) {
+         return ViewExtractor.<ViewExtractor>findAll().stream().collect(Collectors.toList());
+      }
+   }
+
+   @RolesAllowed("tester")
+   @POST
+   @Path("extractor")
+   @Consumes(MediaType.APPLICATION_JSON)
+   @Transactional
+   public Response addExtractor(Json json) {
+      if (json == null) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("No extractor").build();
+      }
+      String accessor = json.getString("accessor");
+      String schema = json.getString("schema");
+      String jsonpath = json.getString("jsonpath");
+      if (accessor == null || accessor.isEmpty() || schema == null || jsonpath == null || !jsonpath.startsWith("$.")) {
+         return Response.status(Response.Status.BAD_REQUEST).build();
+      }
+      try (CloseMe h = sqlService.withRoles(em, identity)) {
+         Schema persistedSchema = Schema.find("uri", schema).firstResult();
+         if (persistedSchema == null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Missing schema " + schema).build();
+         }
+         ViewExtractor extractor = new ViewExtractor();
+         extractor.accessor = accessor;
+         extractor.schema = persistedSchema;
+         extractor.jsonpath = jsonpath;
+         em.persist(extractor);
+         return Response.noContent().build();
+      }
+   }
+
 
 //I'm not sure being able to delete a schema is a good idea since we don't have reference tracking built into the table
 //   @DELETE

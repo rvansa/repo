@@ -6,6 +6,7 @@ import io.hyperfoil.tools.repo.JsProxyObject;
 import io.hyperfoil.tools.repo.entity.converter.JsonContext;
 import io.hyperfoil.tools.repo.entity.json.Access;
 import io.hyperfoil.tools.repo.entity.json.Run;
+import io.hyperfoil.tools.repo.entity.json.Schema;
 import io.hyperfoil.tools.repo.entity.json.Test;
 import io.hyperfoil.tools.yaup.HashedLists;
 import io.hyperfoil.tools.yaup.StringUtil;
@@ -194,15 +195,6 @@ public class RunService {
 
    @RolesAllowed(Roles.UPLOADER)
    @POST
-   @Path("hyperfoil")
-   public Response addHyperfoilRun(@QueryParam("owner") String owner,
-                                   @QueryParam("access") Access access,
-                                   Json json){
-      return addRunFromData("$.info.startTime", "$.info.terminateTime", "$.info.benchmark", owner, access, "http://hyperfoil.io/run-schema/0.6", json);
-   }
-
-   @RolesAllowed(Roles.UPLOADER)
-   @POST
    @Path("data")
    @Transactional
    public Response addRunFromData(@QueryParam("start") String start,
@@ -212,24 +204,28 @@ public class RunService {
                                   @QueryParam("access") Access access,
                                   @QueryParam("schema") String schemaUri,
                                   Json data) {
-      Object foundTest = findIfNotSet(test, data);
-      Object foundStart = findIfNotSet(start, data);
-      Object foundStop = findIfNotSet(stop, data);
-
-      if (foundTest == null || foundTest.toString().trim().isEmpty()) {
-         return Response.noContent().entity("cannot find " + test + " in data").build();
-      }
-
       try (CloseMe h = sqlService.withRoles(em, identity)) {
-         Test testEntity = getOrCreateTest(foundTest.toString(), owner, access);
-         if (testEntity == null) {
-            return Response.serverError().entity("failed to find or create test " + foundTest.toString()).build();
-         }
          if (schemaUri == null || schemaUri.isEmpty()) {
             schemaUri = data.getString("$schema");
          } else {
             data.set("$schema", schemaUri);
          }
+         Schema schema = Schema.find("uri", schemaUri).firstResult();
+
+         Object foundTest = findIfNotSet(test, data, schema == null ? null : schema.testPath);
+         Object foundStart = findIfNotSet(start, data, schema == null ? null : schema.startPath);
+         Object foundStop = findIfNotSet(stop, data, schema == null ? null : schema.stopPath);
+
+         String testNameOrId = foundTest == null ? null : foundTest.toString().trim();
+         if (testNameOrId == null || testNameOrId.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Cannot identify test name.").build();
+         }
+
+         Test testEntity = getOrCreateTest(testNameOrId, owner, access);
+         if (testEntity == null) {
+            return Response.serverError().entity("Failed to find or create test " + testNameOrId).build();
+         }
+
          String validationError = schemaService.validate(data, schemaUri);
          if (validationError != null) {
             return Response.status(Response.Status.BAD_REQUEST).entity(validationError).build();
@@ -248,8 +244,18 @@ public class RunService {
       }
    }
 
-   private Object findIfNotSet(String value, Json data) {
-      return value != null && value.startsWith("$.") ? Json.find(data, value, "") : value;
+   private Object findIfNotSet(String value, Json data, String path) {
+      if (value != null) {
+         if (value.startsWith("$.")) {
+            return Json.find(data, value, null);
+         } else {
+            return value;
+         }
+      } else if (path != null) {
+         return Json.find(data, path, null);
+      } else {
+         return null;
+      }
    }
 
    private Instant toInstant(Object time) {
@@ -295,14 +301,6 @@ public class RunService {
          return Response.status(400).entity("This user does not have permissions to upload run for owner=" + run.owner).build();
       }
 
-      if (test.schema != null && !test.schema.isEmpty()) {
-         JsonValidator validator = new JsonValidator(test.schema);
-
-         Json result = validator.validate(run.data);
-         if (result.has("messages") && result.has("details")) {
-            return Response.serverError().entity(result.toString(2)).build();
-         }
-      }
       try {
          if (run.id == null) {
              em.persist(run);

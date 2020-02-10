@@ -46,7 +46,11 @@ export default () => {
     const schema = useSelector(selectors.getById(schemaId))
     const [name, setName] = useState("")
     const [description, setDescription] = useState("");
-    const [json, setJson] = useState(toString(schema.schema) || "{}")
+    const [testPath, setTestPath] = useState(schema.testPath || "")
+    const [startPath, setStartPath] = useState(schema.startPath || "")
+    const [stopPath, setStopPath] = useState(schema.stopPath || "")
+    const [editorSchema, setEditorSchema] = useState(toString(schema.schema) || "{}")
+
     const dispatch = useDispatch();
     useEffect(() => {
         if (schemaId !== "_new") {
@@ -57,42 +61,49 @@ export default () => {
         console.log("userEffect",schema)
         setName(schema.name || "");
         setDescription(schema.description || "")
-        setJson(toString(schema.schema) || "{}")
+        setUri(schema.uri || "")
+        setTestPath(schema.testPath)
+        setStartPath(schema.startPath)
+        setStopPath(schema.stopPath)
+        setOwner(schema.owner)
+        setAccess(schema.access)
+        setEditorSchema(toString(schema.schema) || "{}")
     }, [schema])
     const editor = useRef();
     const getFormSchema = () => {
         const rtrn = {
             name,
             description,
-            schema: fromEditor(json),
+            schema: fromEditor(schema),
         }
         if (schemaId !== "_new") {
             rtrn.id = schemaId;
         }
         return rtrn;
     }
-    const [uri, setUri] = useState("")
+    const [uri, setUri] = useState(schema.uri)
     const [uriMatching, setUriMatching] = useState(true)
     const [importFailed, setImportFailed] = useState(false)
     // TODO: use this in reaction to editor change
-    const parseUri = newJson => {
-        let jsonUri = jsonpath.value(JSON.parse(newJson), "$['$id']")
-        if (!jsonUri || jsonUri === "") {
+    const parseUri = newSchema => {
+        const schemaUri = jsonpath.value(JSON.parse(newSchema), "$['$id']")
+        if (!schemaUri || schemaUri === "") {
            setImportFailed(true)
            setInterval(() => setImportFailed(false), 5000)
         } else if (!uri || uri === "") {
-           setUri(jsonUri);
+           setUri(schemaUri);
            setUriMatching(true)
         } else {
-           setUriMatching(uri == jsonUri)
+           setUriMatching(uri == schemaUri)
         }
     }
     const checkUri = newUri => {
-        let jsonUri = jsonpath.value(JSON.parse(editor.current.getValue()), "$['$id']")
-        if (!jsonUri || jsonUri === "") {
+        const currentSchema = editor.current.getValue()
+        const schemaUri = jsonpath.value(JSON.parse(currentSchema), "$['$id']")
+        if (!schemaUri || schemaUri === "") {
            return // nothing to do
         } else {
-           setUriMatching(newUri == jsonUri)
+           setUriMatching(newUri == schemaUri)
         }
     }
 
@@ -166,9 +177,29 @@ export default () => {
                                         aria-describedby="description-helper"
                                         name="schemaDescription"
                                         readOnly={ !isTester }
-                                        isValid={true}
                                         onChange={e => setDescription(e)}
                                     />
+                                </FormGroup>
+                                <FormGroup label="Test name JSON path" fieldId="testPath">
+                                    <TextInput id="testPath"
+                                               value={testPath}
+                                               onChange={setTestPath}
+                                               placeholder="e.g. $.testName"
+                                               isReadOnly={ !isTester } />
+                                </FormGroup>
+                                <FormGroup label="Start time JSON path" fieldId="startPath">
+                                    <TextInput id="startPath"
+                                               value={startPath}
+                                               onChange={setStartPath}
+                                               placeholder="e.g. $.startTimestamp"
+                                               isReadOnly={ !isTester } />
+                                </FormGroup>
+                                <FormGroup label="Stop time JSON path" fieldId="stopPath">
+                                    <TextInput id="stopPath"
+                                               value={stopPath}
+                                               onChange={setStopPath}
+                                               placeholder="e.g. $.stopTimestamp"
+                                               isReadOnly={ !isTester } />
                                 </FormGroup>
                                 <FormGroup label="Owner" fieldId="schemaOwner">
                                    { isTester ? (
@@ -190,14 +221,17 @@ export default () => {
                                 <ActionGroup style={{ marginTop: 0 }}>
                                     <Button variant="primary" 
                                         onClick={e => {
-                                            const editorValue = fromEditor(editor.current.getValue())
+                                            // const editorValue = fromEditor(editor.current.getValue())
                                             const newSchema = {
                                                 name,
                                                 uri,
                                                 description,
+                                                schema: fromEditor(editor.current.getValue()),
+                                                testPath: testPath,
+                                                startPath: startPath,
+                                                stopPath: stopPath,
                                                 access: accessName(access),
                                                 owner,
-                                                schema: editorValue
                                             }
                                             if (schemaId !== "_new"){
                                                 newSchema.id = schemaId;
@@ -215,9 +249,9 @@ export default () => {
                         </ToolbarSection>
                     </Toolbar>
                 </CardHeader>
-                <CardBody>
+                <CardBody style={{ minHeight: "600px" }}>
                     <Editor
-                        value={json}
+                        value={editorSchema || "{}"}
                         setValueGetter={e => { editor.current = e }}
                         options={{ mode: "application/ld+json" }}
                     />
