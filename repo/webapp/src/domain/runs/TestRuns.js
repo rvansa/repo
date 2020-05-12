@@ -3,6 +3,7 @@ import { useParams } from "react-router"
 import { useSelector } from 'react-redux'
 import { useDispatch } from 'react-redux'
 import {
+    Button,
     Card,
     CardHeader,
     CardBody,
@@ -15,6 +16,7 @@ import {
 import {
     EditIcon,
     WarningTriangleIcon,
+    ThumbTackIcon,
 } from '@patternfly/react-icons';
 import { NavLink } from 'react-router-dom';
 
@@ -28,7 +30,7 @@ import { tokenSelector } from '../../auth'
 import { fetchTest } from '../tests/actions';
 import { get } from '../tests/selectors';
 
-import Table from '../../components/Table';
+import Table, { IndeterminateCheckbox } from '../../components/Table';
 
 //TODO how to prevent rendering before the data is loaded? (we just have start,stop,id)
 const renderCell = (render) => (arg) => {
@@ -66,6 +68,17 @@ const renderCell = (render) => (arg) => {
 
 const staticColumns = [
     {
+        Header: "",
+        id: "selection",
+        disableSortBy: true,
+        Cell: ({ row }) => {
+           return (
+             <div>
+               <IndeterminateCheckbox {...row.getToggleRowSelectedProps()} />
+             </div>
+           )
+        },
+    }, {
         Header: "Id",
         accessor: "id",
         Cell: (arg) => {
@@ -77,10 +90,10 @@ const staticColumns = [
         id: "executed",
         Cell: arg => {
             const format = time => DateTime.fromMillis(time).toFormat("yyyy-LL-dd HH:mm:ss ZZZ")
-            const content = (<table style={{ width: "300px" }}>
+            const content = (<table style={{ width: "300px" }}><tbody>
                                 <tr><td>Started:</td><td>{format(arg.row.original.start)}</td></tr>
                                 <tr><td>Finished:</td><td>{format(arg.row.original.stop)}</td></tr>
-                             </table>)
+                             </tbody></table>)
             return (<Tooltip isContentLeftAligned content={content}>
                       <span>{moment(arg.row.original.stop).fromNow()}</span>
                     </Tooltip>)
@@ -108,8 +121,9 @@ export default () => {
     const { testId } = useParams();
     const test = useSelector(get(testId))
     const [columns, setColumns] = useState((test && test.defaultView) ? test.defaultView.components : [])
+    const [selectedRows, setSelectedRows] = useState({})
     const tableColumns = useMemo(() => {
-        const rtrn = [...staticColumns]
+        const rtrn = [ ...staticColumns ]
         columns.forEach((col, index) => {
              rtrn.push({
                  Header: col.headerName,
@@ -149,7 +163,12 @@ export default () => {
                     </Toolbar>
                 </CardHeader>
                 <CardBody>
-                    <Table columns={tableColumns} data={runs} initialSortBy={[{id: "stop", desc: true}]} isLoading={isLoading}/>
+                    <Table columns={tableColumns}
+                           data={runs}
+                           initialSortBy={[{id: "stop", desc: true}]}
+                           isLoading={isLoading}
+                           onSelected={setSelectedRows}
+                           />
                 </CardBody>
             </Card>
         </PageSection>

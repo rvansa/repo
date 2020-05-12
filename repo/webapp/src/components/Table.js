@@ -1,28 +1,50 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Spinner } from '@patternfly/react-core';
-import { useTable, useSortBy } from 'react-table'
+import { useTable, useSortBy, useRowSelect } from 'react-table'
 import clsx from 'clsx';
 
 // We need to pass the same empty list to prevent re-renders
 const NO_DATA = []
 
-function Table({ columns, data, initialSortBy = [], isLoading = false }) {
+export const IndeterminateCheckbox = React.forwardRef(
+  ({ indeterminate, ...rest }, ref) => {
+    const defaultRef = React.useRef()
+    const resolvedRef = ref || defaultRef
+
+    useEffect(() => {
+      resolvedRef.current.indeterminate = indeterminate
+    }, [resolvedRef, indeterminate])
+    return (
+      <>
+        <input type="checkbox" ref={resolvedRef} {...rest} />
+      </>
+    )
+  }
+)
+
+function Table({ columns, data, initialSortBy = [], isLoading = false, onSelected = () => {} }) {
   const {
     getTableProps,
     getTableBodyProps,
     headerGroups,
     rows,
     prepareRow,
+    state,
   } = useTable(
     {
       columns,
       data: data || NO_DATA,
       initialState: {
          sortBy: initialSortBy
-      }
+      },
     },
-    useSortBy
+    useSortBy,
+    useRowSelect,
   )
+  const { selectedRowIds, expanded, selectedRowPaths } = state;
+  useEffect(()=>{
+      onSelected(selectedRowIds)
+  },[selectedRowIds])
   if (!data) {
      return (
         <center><Spinner /></center>
@@ -65,8 +87,12 @@ function Table({ columns, data, initialSortBy = [], isLoading = false }) {
           {rows.map(
             (row, i) => {
               prepareRow(row);
+              const rowProps = row.getRowProps()
+              if (row.isSelected) {
+                rowProps.style = { ...rowProps.style, background: "#EEE" }
+              }
               return (
-                <tr key={i} {...row.getRowProps()} >
+                <tr key={i} {...rowProps} >
                   {row.cells.map((cell,cellIndex) => {
                     return (
                       <td data-label={cell.column.Header} key={cellIndex} {...cell.getCellProps()} >{cell.render('Cell')}</td>
